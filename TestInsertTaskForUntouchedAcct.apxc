@@ -1,0 +1,76 @@
+@isTest
+public class TestInsertTaskForUntouchedAccts {
+
+    // CRON expression: midnight on March 15.
+    // Beacuse this is a test, job executes immediately after Test.StopTest()
+    
+    public static String JOB_TIME = '0 0 0 15 3 ? 2022';
+    
+    static testmethod void test(){
+        Test.startTest();
+        Datetime now  = Datetime.now();
+          
+        RecordType rt = [Select Name, Id From RecordType 
+                  where sObjectType='Account' and isActive=true and name = 'Institution' Limit 1 ];
+        
+        // get record type information
+        Schema.DescribeSObjectResult cfrSchema = Schema.SObjectType.Account; 
+		Map<String,Schema.RecordTypeInfo> AccountRecordTypeInfo = cfrSchema.getRecordTypeInfosByName(); 
+        Id instRecordTypeId = AccountRecordTypeInfo .get('Institution').getRecordTypeId();
+            
+        //schedule the test job
+        String jobId = System.schedule('TestInsertTaskForUntouchedAccts',
+                                     JOB_TIME,
+                                     new ScheduledTaskCreation());
+		
+		// Get the information from the CronTrigger API object        
+        CronTrigger ct = [SELECT Id, CronExpression, TimesTriggered, NextFireTime
+                        FROM CronTrigger WHERE id = :jobId];
+               
+        //verify the expressions are the same
+        System.assertEquals(JOB_TIME, ct.CronExpression);
+        
+        //verify that the job has not run
+        System.assertEquals(0, ct.TimesTriggered);
+        
+        // verify the next time the job will run
+        System.assertEquals('2022-03-15 00:00:00', String.valueOf(ct.NextFireTime));
+        
+        Date thirtyDaysAgo =  Date.newInstance(2015, 1, 1);
+        
+        // create a user - set it to relationship owner user for the account
+        Profile p = [SELECT Id FROM Profile WHERE Name='Standard User']; 
+        User u1 = new User(Alias = 'standt', Email='standarduser@testorg.com', 
+            EmailEncodingKey='UTF-8', LastName='Testing', LanguageLocaleKey='en_US', 
+            LocaleSidKey='en_US',TimeZoneSidKey ='America/New_York', ProfileId = p.Id, 
+            UserName='testuser@campbell.com');
+        insert u1;
+        
+        // create an account where last touch date is more than 30 days old
+        Account acct1 = new Account(Name = 'Test account1', last_touch_date__c = thirtyDaysAgo, RecordTypeid = instRecordTypeId);
+        acct1.Relationship_Owner_User__c = u1.Id;
+        insert acct1;
+                
+        // create an account where last touch date is more than 30 days old ans relationship owner is null
+        Account acct2 = new Account(Name = 'Test account2', last_touch_date__c = thirtyDaysAgo, RecordTypeid = instRecordTypeId);
+        acct2.Relationship_Owner_User__c = null;
+        insert acct2;
+
+        //verify there are no tasks associated with the relationship owner of this account        
+        Task[] tasks = [SELECT Id from Task where OwnerId = :u1.Id];
+        System.assertEquals(0, tasks.size());
+        Test.stopTest();
+        
+        // now that the scheduled task has executed after Test.stopTest(),
+        // verify that the account relationship owner has one task         
+        tasks = [SELECT Id from Task where CreatedDate >= :now];
+        //System.Debug('****found tasks with CreatedDate > now' + tasks.size());
+        System.assertEquals(1, tasks.size());
+        
+        tasks = [SELECT Id from Task where OwnerId = :u1.Id];
+        //System.Debug('****found tasks withowner id' + tasks.size());
+        System.assertEquals(1, tasks.size());
+
+    }
+    
+}
