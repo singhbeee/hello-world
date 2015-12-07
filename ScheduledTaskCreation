@@ -1,0 +1,45 @@
+// before this class can be changed, delete the scheduled job
+// Monitoring -> Scheduled Jobs -> Insert tasks for accts not touched in 30 days
+// to scheudule manually : Develop -> Apex Classes -> Schedule Apex button 
+global class ScheduledTaskCreation implements Schedulable
+{
+	global void execute(SchedulableContext ctx)
+    {
+        insertTaskForUntouchedAccts();
+    }
+    
+    
+    // find accounts where the last touch date is more than 30 days
+    // and insert task for that account
+    public void insertTaskForUntouchedAccts()
+    {
+    	List <Account> accts = [SELECT last_touch_date__c, Name, Relationship_owner__c, Relationship_Owner_User__c, RecordTypeName__c FROM Account 
+									WHERE  last_touch_date__c < N_DAYS_AGO:30
+									AND RecordTypeName__c IN ('Institution', 'Location') ];
+        
+        List <Task> taskList = new List<Task>();
+        
+        for (Account a: accts){            
+            if(a.Relationship_Owner_User__c != null){
+                Task b = new Task
+                    (
+                        Subject = 'Touch Base',
+                        Status = 'Not Started',
+                        Priority = 'Normal',
+                        //WhoId = a.Relationship_Owner_User__c,
+                        WhatId = a.id,
+                        OwnerId = a.Relationship_Owner_User__c,  //**** this works, assigns to owner user
+                        //OwnerId = a.Relationship_owner__c, // relationship owner contact *** this doesn't work - 
+                        ActivityDate = date.today()
+                    );
+                    TaskList.add(b);
+        	}
+            else{
+                // do nothing at this point
+                System.Debug('this account has no relationship owner ' + a.Name);
+            }
+        
+        }
+        insert TaskList;
+    }
+}
