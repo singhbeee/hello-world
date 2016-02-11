@@ -1,0 +1,43 @@
+trigger InsertRelationshipOwner on Account (after insert, after update) {
+
+    if(checkRecursive.runOnce())
+    {
+        // look for accounts of type Institution and Location
+    	List<Account> accts = [SELECT Id,RecordTypeName__c, Relationship_Owner_User__c FROM Account 
+                           WHERE Id in :Trigger.New 
+                           and RecordTypeName__c in ('Location', 'Institution')];
+    
+    	List <Account> updateList = new List<Account>();
+
+    	if(accts.size() > 0)
+    	{
+        	List<User> susanUser = [SELECT id from User where FirstName = 'Susan' and LastName = 'Roberts'];
+        	List<Contact> susanContact = [SELECT id from Contact where FirstName = 'Susan' and LastName = 'Roberts'];
+
+        	//System.Debug ('Susan user ' + susanUser + ' and susan contact = ' + susanContact);
+        
+   		 	for (Account a: accts) {
+       		 	//System.debug('record type is ' + a.RecordTypeName__c);
+             	if(a.Relationship_Owner_User__c == null)
+             	{
+                 	a.Relationship_Owner_User__c = susanUser[0].id;
+                 	a.Relationship_Owner__c = susanContact[0].id;
+                    //System.Debug(' user ' + a.Relationship_Owner_User__c  + 'and the contact ' + a.Relationship_Owner__c);
+                 	updateList.add(a);
+             	}
+             	else
+             	{
+                 	//System.Debug('**Found relationship user ' + a.Relationship_Owner_User__c);
+                 	User u = [SELECT id, FirstName, LastName from User where id =: a.Relationship_Owner_User__c];
+                 	//System.Debug('**realtionshipuser is ' + u.id);
+                 	a.Relationship_Owner__c = ([SELECT id from Contact where FirstName =: u.FirstName and LastName =: u.LastName])[0].id;
+                 	//System.Debug ( '**relationshipcontact is ' + a.Relationship_Owner__c);
+                 	updateList.add(a);
+             	}
+    		}
+
+    
+		}
+    	update updateList;
+    }
+}
